@@ -37,7 +37,17 @@ prints garbage; use `/img --cells` there instead.
 
 Confirmed working with the override: WezTerm -> ssh -> herdr 0.9.3.
 
-## Loading
+## Install
+
+At the prompt of a Claude Code terminal session:
+
+```
+/plugin install terminal-image --marketplace SeitaHigashi/claude-terminal-image
+```
+
+Answer `y` to add the marketplace (`seita-mods`), then pick a scope.
+
+To run it from a checkout while developing instead:
 
 ```sh
 claude --plugin-dir /path/to/claude-terminal-image

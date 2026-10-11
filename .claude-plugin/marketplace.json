@@ -1,0 +1,5 @@
+{
+  "name": "seita-mods",
+  "owner": { "name": "Seita Higashi" },
+  "plugins": [{ "name": "terminal-image", "source": "./" }]
+}
