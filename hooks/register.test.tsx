@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import type { CommandRunInput } from 'claude-code'
 
 // One orange upper-half block, [0x2580, 0xff8800, 0x000000] as RasterProps
@@ -100,4 +100,31 @@ test('show_image opens the pane and reports a helper failure to the model', asyn
 
   helper = { ...RAN, exitCode: 1, stderr: 'not a PNG file' }
   expect((await call('/x/a.txt')).deny).toBe('img: not a PNG file')
+})
+
+test('the picture is fitted again when the pane has another room than it was fitted to', async ($, on) => {
+  const boxes: string[] = []
+  on('process.run', async (_$, e) => {
+    boxes.push(`${e.argv[3]}x${e.argv[4]}`)
+
+    return { value: { ...RAN, stdout: PIXELS } }
+  })
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  const clock = mock.clock(on)
+  const draw = async (bodyColumns: number, bodyRows: number, waitMs: number) => {
+    const ui = await $.ui.mount({ ...PANE, props: { ...PANE_PROPS, bodyColumns, scroll: { offset: 0, bodyRows } } })
+    await clock.advance(waitMs)
+    await ui.unmount()
+  }
+
+  await $.command.run(img('a.png'))
+  await draw(80, 24, 300)
+  expect(boxes).toEqual(['80x24'])
+
+  // A resize in progress: each size is drawn, only the one it settles on is fitted.
+  await draw(100, 30, 100)
+  await draw(110, 35, 100)
+  await draw(120, 40, 300)
+  await draw(120, 40, 300)
+  expect(boxes).toEqual(['80x24', '120x40'])
 })

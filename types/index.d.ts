@@ -1,5 +1,9 @@
+export type Box = { columns: number; rows: number }
+
 export type View = {
   path: string
+  /** The room (in cells) the picture was fitted into; the pane refits when its own differs. */
+  box?: Box
   columns: number
   rows: number
   /** Raster cells (RasterProps), one upper-half block per cell. */

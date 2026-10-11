@@ -49,8 +49,10 @@ claude --plugin-dir /path/to/claude-terminal-image
 /img [--cells] <file.png>
 ```
 
-The picture is fitted into a box of at most 80x24 cells, keeping its aspect ratio.
-Running `/img` again replaces the picture in the same pane.
+The picture is fitted into the pane's body, keeping its aspect ratio (80x24 cells
+before the pane has been drawn once). When the pane's width changes, the picture is
+fitted again once the resize settles. Running `/img` again replaces the picture in
+the same pane.
 
 ## Auto-display
 
@@ -69,7 +71,8 @@ with `/img`); on a narrower terminal it waits undrawn.
 
 - PNG only, 8- or 16-bit, non-interlaced. Convert other formats first, e.g.
   `magick in.jpg out.png`.
-- The box size is fixed; the picture does not follow a pane resize.
+- A change of the pane's height alone does not redraw, so the picture follows it only
+  at the next width change or `/img`.
 
 ## Development
 

@@ -1,29 +1,40 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { View } from '../types'
+import type { Box, View } from '../types'
 
 const PANE = 'terminal-image'
-// ponytail: fixed box; read the pane's viewport and re-run the helper if it should follow a resize.
-const MAX_COLUMNS = 80
-const MAX_ROWS = 24
+// The room the pane's body had at its last draw; the box before any draw.
+// A module variable: a reload falls back to the default and the next draw refits.
+let room: Box = { columns: 80, rows: 24 }
+// The last refit asked for, so a failing one is not asked again at every draw.
+let lastRefit = ''
+// How long the pane's room must stay the same before the picture is fitted to it.
+const SETTLE_MS = 300
+let settling: Timer | undefined
 const USAGE = 'Usage: /img [--cells] <file.png>'
 // A RegExp: the generated tool-name union only knows the mod's own tool after a reload.
 const SHOW_TOOL = /^mcp__terminal-image__show_image$/
 const view = atom({ plugin: 'terminal-image', key: 'view' } as const, null)
 
-async function show($: EngineInterface, path: string, isCells: boolean): Promise<{ text: string; isError?: true }> {
+async function fit($: EngineInterface, path: string, isCells: boolean, box: Box): Promise<View | string> {
   const ran = await $.process.run([
     'node',
     `${$.plugin.root}/bin/png2cells.mjs`,
     path,
-    String(MAX_COLUMNS),
-    String(MAX_ROWS),
+    String(box.columns),
+    String(box.rows),
     ...(isCells ? [] : ['--pixels']),
   ])
-  if (ran.exitCode !== 0) return { text: `img: ${ran.stderr || 'the helper failed'}`, isError: true }
+  if (ran.exitCode !== 0) return ran.stderr || 'the helper failed'
 
-  const made: View = { ...JSON.parse(ran.stdout), path }
+  return { ...JSON.parse(ran.stdout), path, box }
+}
+
+async function show($: EngineInterface, path: string, isCells: boolean): Promise<{ text: string; isError?: true }> {
+  const made = await fit($, path, isCells, room)
+  if (typeof made === 'string') return { text: `img: ${made}`, isError: true }
+
   await update($, view, () => made)
   await $.ui.open({ id: PANE, title: path, rows: made.rows + 1 })
 
@@ -85,6 +96,26 @@ export const register: Register = on => {
     const { Box, Text, Raster, Image } = $.ui.resolve(e)
     const shown = await read($, view)
     if (!shown) return <Text dimColor>{USAGE}</Text>
+
+    // Follow the pane: when its room is not the box the picture was fitted to, fit
+    // again. A draw may not write state, so the write happens from a timer.
+    room = { columns: Math.max(1, e.props.bodyColumns), rows: Math.max(1, e.props.scroll.bodyRows) }
+    const { path } = shown
+    const isCells = !shown.pixels
+    const wanted = room
+    const refit = `${path} ${isCells} ${wanted.columns}x${wanted.rows}`
+    const isFitted = shown.box?.columns === wanted.columns && shown.box?.rows === wanted.rows
+    // Each draw of a resize in progress puts the refit off again: it runs once, when the size has settled.
+    settling?.cancel()
+    settling = undefined
+    if (!isFitted && refit !== lastRefit) {
+      settling = $.clock.after(SETTLE_MS, async () => {
+        lastRefit = refit
+        const made = await fit($, path, isCells, wanted)
+        // Keep a picture shown since: only the one this refit was for is replaced.
+        if (typeof made !== 'string') await update($, view, now => (now?.path === path ? made : now))
+      })
+    }
 
     return (
       <Box flexDirection="column">
