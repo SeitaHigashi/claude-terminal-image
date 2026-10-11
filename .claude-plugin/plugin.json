@@ -2,5 +2,6 @@
   "name": "terminal-image",
   "version": "0.1.0",
   "description": "Show an image (PNG, JPEG, GIF, WebP, BMP) in a terminal pane with kitty graphics (--cells: half-block cells for terminals without it)",
+  "license": "MIT",
   "types": "./types/index.d.ts"
 }
