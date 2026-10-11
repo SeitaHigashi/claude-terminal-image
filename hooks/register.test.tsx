@@ -67,7 +67,7 @@ test('/img reports a helper failure instead of opening a pane', async ($, on) =>
 
 const PIXELS = JSON.stringify({ columns: 1, rows: 1, cells: CELLS, pixels: { rgba: 'AAAA/w==', width: 1, height: 1 } })
 
-test('a Read of a .png opens the pane; other files and a helper failure leave the Read alone', async ($, on) => {
+test('a Read of an image opens the pane; other files and a helper failure leave the Read alone', async ($, on) => {
   const opened: string[] = []
   let helper = { ...RAN, stdout: PIXELS }
   on('process.run', async () => ({ value: helper }))
@@ -84,10 +84,13 @@ test('a Read of a .png opens the pane; other files and a helper failure leave th
   await $.tool.call({ tool: 'Read', file_path: '/x/A.PNG' })
   expect(opened).toEqual(['/x/A.PNG'])
 
+  await $.tool.call({ tool: 'Read', file_path: '/x/photo.jpeg' })
+  expect(opened).toEqual(['/x/A.PNG', '/x/photo.jpeg'])
+
   helper = { ...RAN, exitCode: 1, stderr: 'not a PNG file' }
   const ran = await $.tool.call({ tool: 'Read', file_path: '/x/broken.png' })
   expect(ran.deny).toBeUndefined()
-  expect(opened).toEqual(['/x/A.PNG'])
+  expect(opened).toEqual(['/x/A.PNG', '/x/photo.jpeg'])
 })
 
 test('show_image opens the pane and reports a helper failure to the model', async ($, on) => {

@@ -1,10 +1,10 @@
 # terminal-image
 
-A Claude Code mod (function-hooks plugin) that shows a PNG in a pane inside the
-terminal UI.
+A Claude Code mod (function-hooks plugin) that shows an image (PNG, JPEG, GIF, WebP,
+BMP) in a pane inside the terminal UI.
 
-- `/img <file.png>` draws the picture with the kitty graphics protocol (real pixels).
-- `/img --cells <file.png>` draws it as half-block character cells, for terminals
+- `/img <image>` draws the picture with the kitty graphics protocol (real pixels).
+- `/img --cells <image>` draws it as half-block character cells, for terminals
   without kitty graphics.
 
 The plugin name is `terminal-image`; the folder is `claude-terminal-image`. Plugin
@@ -14,8 +14,10 @@ two differ on purpose.
 ## Requirements
 
 - Claude Code with function-hooks plugins (developed against 2.1.293).
-- `node` on `PATH`: the PNG is decoded by `bin/png2cells.mjs`, which has no
-  dependencies beyond Node's standard library.
+- `node` on `PATH`: images are decoded by `bin/img2cells.mjs`, which has no
+  dependencies beyond Node's standard library and a vendored copy of the jpeg-js
+  decoder (`bin/jpeg-decoder.cjs`; its licenses are in `THIRD_PARTY_LICENSES.md`).
+- For WebP only: `dwebp` (libwebp) or `magick` (ImageMagick) on `PATH`.
 - For the default (pixel) mode, a terminal that implements the kitty graphics
   protocol.
 
@@ -56,7 +58,7 @@ claude --plugin-dir /path/to/claude-terminal-image
 ## Usage
 
 ```
-/img [--cells] <file.png>
+/img [--cells] <image>
 ```
 
 The picture is fitted into the pane's body, keeping its aspect ratio (80x24 cells
@@ -68,7 +70,8 @@ the same pane.
 
 The pane also opens without typing `/img`:
 
-- When the model reads a `.png` with the `Read` tool, that file is shown.
+- When the model reads a `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp` or `.bmp` with the
+  `Read` tool, that file is shown.
 - The mod registers a tool, `mcp__terminal-image__show_image` (`{ path }`), which the
   model can call after it generates or saves an image. Its schema is in the prompt's
   tool list from the start (`isDeferred: false`).
@@ -79,8 +82,13 @@ with `/img`); on a narrower terminal it waits undrawn.
 
 ## Limits
 
-- PNG only, 8- or 16-bit, non-interlaced. Convert other formats first, e.g.
-  `magick in.jpg out.png`.
+- The format is detected from the file's bytes, not its extension.
+- PNG: 8- or 16-bit, non-interlaced.
+- JPEG: baseline and progressive, grayscale/YCbCr/CMYK (via jpeg-js).
+- GIF: the first frame only; transparency is drawn over black.
+- BMP: uncompressed 24- or 32-bit.
+- WebP: needs `dwebp` or `magick` on `PATH`, otherwise the pane reports an error.
+- Anything else (HEIC, AVIF, TIFF, ...): convert first, e.g. `magick in.heic out.png`.
 - A change of the pane's height alone does not redraw, so the picture follows it only
   at the next width change or `/img`.
 
@@ -91,6 +99,7 @@ Run from the mod folder:
 ```sh
 claude plugin validate .
 claude plugin test .
+node --test bin/img2cells.test.mjs   # add libwebp to PATH to run the WebP case
 tsc -p .
 ```
 

@@ -12,7 +12,7 @@ let lastRefit = ''
 // How long the pane's room must stay the same before the picture is fitted to it.
 const SETTLE_MS = 300
 let settling: Timer | undefined
-const USAGE = 'Usage: /img [--cells] <file.png>'
+const USAGE = 'Usage: /img [--cells] <image file>'
 // A RegExp: the generated tool-name union only knows the mod's own tool after a reload.
 const SHOW_TOOL = /^mcp__terminal-image__show_image$/
 const view = atom({ plugin: 'terminal-image', key: 'view' } as const, null)
@@ -20,7 +20,7 @@ const view = atom({ plugin: 'terminal-image', key: 'view' } as const, null)
 async function fit($: EngineInterface, path: string, isCells: boolean, box: Box): Promise<View | string> {
   const ran = await $.process.run([
     'node',
-    `${$.plugin.root}/bin/png2cells.mjs`,
+    `${$.plugin.root}/bin/img2cells.mjs`,
     path,
     String(box.columns),
     String(box.rows),
@@ -45,16 +45,16 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'img',
-      description: 'Show a PNG in a pane with kitty graphics (--cells: half-block cells instead)',
-      argumentHint: '[--cells] <file.png>',
+      description: 'Show an image (PNG, JPEG, GIF, WebP, BMP) in a pane with kitty graphics (--cells: half-block cells instead)',
+      argumentHint: '[--cells] <image file>',
     })
     await $.tool.register({
       name: 'show_image',
       description:
-        'Show a PNG file to the user in a terminal pane. Call it after generating or saving an image the user will want to see. Reading a .png with Read already shows it.',
+        'Show an image file (PNG, JPEG, GIF, WebP or BMP) to the user in a terminal pane. Call it after generating or saving an image the user will want to see. Reading an image with Read already shows it.',
       inputSchema: {
         type: 'object',
-        properties: { path: { type: 'string', description: 'Absolute path of the PNG file' } },
+        properties: { path: { type: 'string', description: 'Absolute path of the image file' } },
         required: ['path'],
       },
       isDeferred: false,
@@ -72,10 +72,10 @@ export const register: Register = on => {
     return { text: (await show($, path, isCells)).text }
   })
 
-  // Auto-display: a PNG the model reads shows up without typing /img.
+  // Auto-display: an image the model reads shows up without typing /img.
   on('tool.call', { tool: 'Read' }, async ($, e, next) => {
     const ran = await next(e)
-    if (ran.deny === undefined && !ran.isError && /\.png$/i.test(e.file_path)) {
+    if (ran.deny === undefined && !ran.isError && /\.(png|jpe?g|gif|webp|bmp)$/i.test(e.file_path)) {
       // The picture is a side effect: a failure here must not fail the Read.
       await show($, e.file_path, false).catch(() => undefined)
     }
