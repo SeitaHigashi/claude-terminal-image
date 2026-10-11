@@ -1,0 +1,103 @@
+import { expect, test } from 'claude-code/testing'
+import type { CommandRunInput } from 'claude-code'
+
+// One orange upper-half block, [0x2580, 0xff8800, 0x000000] as RasterProps
+// packs it: what the helper prints for a 1x1-cell picture.
+const CELLS = 'gCUAAACI/wAAAAAA'
+const RAN = { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+
+const PANE = {
+  plugin: 'terminal-image',
+  surface: 'terminal',
+  component: 'Pane',
+  requestId: 'terminal-image',
+} as const
+const PANE_PROPS = {
+  title: 'a.png',
+  isFocused: false,
+  bodyColumns: 80,
+  placement: 'inline',
+  scroll: { offset: 0, bodyRows: 24 },
+  view: {},
+} as const
+
+const img = (args: string): CommandRunInput => ({
+  command: 'img',
+  args,
+  origin: { kind: 'composer' },
+  presentation: { isFullscreen: false, columns: 120 },
+})
+
+test('/img --cells draws the helper output as a Raster in its pane', async ($, on) => {
+  on('process.run', async () => ({
+    value: { ...RAN, stdout: JSON.stringify({ columns: 1, rows: 1, cells: CELLS }) },
+  }))
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+
+  const ran = await $.command.run(img('--cells a.png'))
+  expect(ran.text).toBe('img: a.png as 1x1 cells')
+
+  const ui = await $.ui.mount({ ...PANE, props: PANE_PROPS })
+  expect(await ui.find({ key: 'picture' })).toMatchObject({ type: 'Raster' })
+})
+
+test('/img asks the helper for pixels and draws them as an Image', async ($, on) => {
+  let argv: readonly string[] = []
+  on('process.run', async (_$, e) => {
+    argv = e.argv
+    const pixels = { rgba: 'AAAA/w==', width: 1, height: 1 }
+
+    return { value: { ...RAN, stdout: JSON.stringify({ columns: 1, rows: 1, cells: CELLS, pixels }) } }
+  })
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+
+  const ran = await $.command.run(img('a.png'))
+  expect(argv.at(-1)).toBe('--pixels')
+  expect(ran.text).toBe('img: a.png as 1x1 cells (kitty graphics)')
+
+  const ui = await $.ui.mount({ ...PANE, props: PANE_PROPS })
+  expect(await ui.find({ type: 'Image' })).toBeDefined()
+})
+
+test('/img reports a helper failure instead of opening a pane', async ($, on) => {
+  on('process.run', async () => ({ value: { ...RAN, exitCode: 1, stderr: 'not a PNG file' } }))
+
+  expect((await $.command.run(img('a.txt'))).text).toBe('img: not a PNG file')
+})
+
+const PIXELS = JSON.stringify({ columns: 1, rows: 1, cells: CELLS, pixels: { rgba: 'AAAA/w==', width: 1, height: 1 } })
+
+test('a Read of a .png opens the pane; other files and a helper failure leave the Read alone', async ($, on) => {
+  const opened: string[] = []
+  let helper = { ...RAN, stdout: PIXELS }
+  on('process.run', async () => ({ value: helper }))
+  on('ui.open', async (_$, e) => {
+    opened.push(e.title ?? '')
+
+    return { value: { isPlaced: true } }
+  })
+  on('tool.call', { tool: 'Read' }, async () => ({ result: 'read' as never }))
+
+  await $.tool.call({ tool: 'Read', file_path: '/x/notes.txt' })
+  expect(opened).toEqual([])
+
+  await $.tool.call({ tool: 'Read', file_path: '/x/A.PNG' })
+  expect(opened).toEqual(['/x/A.PNG'])
+
+  helper = { ...RAN, exitCode: 1, stderr: 'not a PNG file' }
+  const ran = await $.tool.call({ tool: 'Read', file_path: '/x/broken.png' })
+  expect(ran.deny).toBeUndefined()
+  expect(opened).toEqual(['/x/A.PNG'])
+})
+
+test('show_image opens the pane and reports a helper failure to the model', async ($, on) => {
+  let helper = { ...RAN, stdout: PIXELS }
+  on('process.run', async () => ({ value: helper }))
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  const call = (path: string) => $.tool.call({ tool: 'mcp__terminal-image__show_image', path } as never)
+
+  expect((await call('/x/a.png')).result).toBe('img: /x/a.png as 1x1 cells (kitty graphics)')
+
+  helper = { ...RAN, exitCode: 1, stderr: 'not a PNG file' }
+  expect((await call('/x/a.txt')).deny).toBe('img: not a PNG file')
+})
