@@ -16,6 +16,12 @@ const USAGE = 'Usage: /img [--cells] <image file>'
 // A RegExp: the generated tool-name union only knows the mod's own tool after a reload.
 const SHOW_TOOL = /^mcp__terminal-image__show_image$/
 const view = atom({ plugin: 'terminal-image', key: 'view' } as const, null)
+// The conversation draws a picture in a box of this many cells; a row keeps it after a resize.
+const INLINE: Box = { columns: 60, rows: 15 }
+// How many pictures are kept for the transcript's rows; the oldest give way (their rows show text only).
+const KEEP = 20
+// A module variable: a reload forgets them and their rows fall back to the plain result.
+const inline = new Map<string, View>()
 
 async function fit($: EngineInterface, path: string, isCells: boolean, box: Box): Promise<View | string> {
   const ran = await $.process.run([
@@ -41,7 +47,24 @@ async function show($: EngineInterface, path: string, isCells: boolean): Promise
   return { text: `img: ${path} as ${made.columns}x${made.rows} cells${isCells ? '' : ' (kitty graphics)'}` }
 }
 
-export const register: Register = on => {
+// The picture goes under the transcript row of the call `id`, not into the pane.
+async function showInline($: EngineInterface, id: string | undefined, path: string): Promise<{ text: string; isError?: true }> {
+  const made = await fit($, path, false, INLINE)
+  if (typeof made === 'string') return { text: `img: ${made}`, isError: true }
+  if (id !== undefined) {
+    inline.set(id, made)
+    if (inline.size > KEEP) inline.delete(inline.keys().next().value as string)
+  }
+
+  return { text: `img: ${path} as ${made.columns}x${made.rows} cells (kitty graphics)` }
+}
+
+// `display` is a userConfig field: where a picture the model shows or reads appears.
+function present($: EngineInterface, display: unknown, id: string | undefined, path: string) {
+  return display === 'pane' ? show($, path, false) : showInline($, id, path)
+}
+
+export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'img',
@@ -77,7 +100,7 @@ export const register: Register = on => {
     const ran = await next(e)
     if (ran.deny === undefined && !ran.isError && /\.(png|jpe?g|gif|webp|bmp)$/i.test(e.file_path)) {
       // The picture is a side effect: a failure here must not fail the Read.
-      await show($, e.file_path, false).catch(() => undefined)
+      await present($, options.display, e.tool_use_id, e.file_path).catch(() => undefined)
     }
 
     return ran
@@ -86,9 +109,55 @@ export const register: Register = on => {
   on('tool.call', { tool: SHOW_TOOL }, async ($, e) => {
     const path = (e as { path?: unknown }).path
     if (typeof path !== 'string' || !path) return { deny: 'show_image: path is required' }
-    const shown = await show($, path, false)
+    const shown = await present($, options.display, e.tool_use_id, path)
 
     return shown.isError ? { deny: shown.text } : { result: shown.text }
+  })
+
+  // The conversation's own drawing: a picture under the row of the call that showed it.
+  // A standalone call's result row...
+  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    if (e.surface !== 'terminal') return next(e)
+    const shown = inline.get(e.props.tool_use_id)
+    if (!shown?.pixels) return next(e)
+    const { Box, Image } = $.ui.resolve(e)
+
+    return (
+      <Box flexDirection="column">
+        {await next(e)}
+        <Image
+          source={shown.pixels}
+          columns={shown.columns}
+          rows={shown.rows}
+          alt={`${shown.path}: this terminal draws no kitty graphics here; run /img --cells`}
+        />
+      </Box>
+    )
+  })
+
+  // ...and a folded run of calls (`Read 1 file`), under its count line.
+  on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
+    if (e.surface !== 'terminal') return next(e)
+    const found = e.props.calls.flatMap(call => {
+      const shown = call.tool_use_id === undefined ? undefined : inline.get(call.tool_use_id)
+      return shown?.pixels ? [{ ...shown, pixels: shown.pixels }] : []
+    })
+    if (found.length === 0) return next(e)
+    const { Box, Image } = $.ui.resolve(e)
+
+    return (
+      <Box flexDirection="column">
+        {await next(e)}
+        {found.map(shown => (
+          <Image
+            source={shown.pixels}
+            columns={shown.columns}
+            rows={shown.rows}
+            alt={`${shown.path}: this terminal draws no kitty graphics here; run /img --cells`}
+          />
+        ))}
+      </Box>
+    )
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {

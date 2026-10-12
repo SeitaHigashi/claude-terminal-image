@@ -65,9 +65,10 @@ test('/img reports a helper failure instead of opening a pane', async ($, on) =>
   expect((await $.command.run(img('a.txt'))).text).toBe('img: not a PNG file')
 })
 
+const PANE_MODE = { options: { display: 'pane' } }
 const PIXELS = JSON.stringify({ columns: 1, rows: 1, cells: CELLS, pixels: { rgba: 'AAAA/w==', width: 1, height: 1 } })
 
-test('a Read of an image opens the pane; other files and a helper failure leave the Read alone', async ($, on) => {
+test('with display=pane a Read of an image opens the pane; other files and a helper failure leave the Read alone', PANE_MODE, async ($, on) => {
   const opened: string[] = []
   let helper = { ...RAN, stdout: PIXELS }
   on('process.run', async () => ({ value: helper }))
@@ -93,7 +94,7 @@ test('a Read of an image opens the pane; other files and a helper failure leave 
   expect(opened).toEqual(['/x/A.PNG', '/x/photo.jpeg'])
 })
 
-test('show_image opens the pane and reports a helper failure to the model', async ($, on) => {
+test('with display=pane show_image opens the pane and reports a helper failure to the model', PANE_MODE, async ($, on) => {
   let helper = { ...RAN, stdout: PIXELS }
   on('process.run', async () => ({ value: helper }))
   on('ui.open', async () => ({ value: { isPlaced: true } }))
@@ -130,4 +131,53 @@ test('the picture is fitted again when the pane has another room than it was fit
   await draw(120, 40, 300)
   await draw(120, 40, 300)
   expect(boxes).toEqual(['80x24', '120x40'])
+})
+
+const ROW = { plugin: 'terminal-image', surface: 'terminal' } as const
+const CALL = { isRunning: false, isErrored: false, isInterrupted: false, input: {} }
+
+test('by default a Read of an image is drawn under its row and opens no pane', async ($, on) => {
+  const opened: string[] = []
+  on('process.run', async () => ({ value: { ...RAN, stdout: PIXELS } }))
+  on('ui.open', async (_$, e) => {
+    opened.push(e.title ?? '')
+
+    return { value: { isPlaced: true } }
+  })
+  on('tool.call', { tool: 'Read' }, async () => ({ result: 'read' as never }))
+  // The engine's own row, which the plugin's tree wraps.
+  on('ui.render', async (engine, e) => {
+    const { Text } = engine.ui.resolve(e)
+
+    return <Text>the row</Text>
+  })
+
+  await $.tool.call({ tool: 'Read', file_path: '/x/a.png', tool_use_id: 't1' } as never)
+  expect(opened).toEqual([])
+
+  const props = { tool: 'Read', output: {}, isErrored: false }
+  const mine = await $.ui.mount({ ...ROW, component: 'ToolResult', requestId: 't1', props: { ...props, tool_use_id: 't1' } })
+  expect(await mine.find({ type: 'Image' })).toBeDefined()
+
+  const other = await $.ui.mount({ ...ROW, component: 'ToolResult', requestId: 't2', props: { ...props, tool_use_id: 't2' } })
+  expect(await other.find({ type: 'Image' })).toBeUndefined()
+
+  const group = await $.ui.mount({
+    ...ROW,
+    component: 'ToolGroup',
+    requestId: 'g1',
+    props: { calls: [{ ...CALL, tool: 'Read', tool_use_id: 't1' }], isActive: false, isExpanded: false },
+  })
+  expect(await group.find({ type: 'Image' })).toBeDefined()
+})
+
+test('by default show_image answers with the picture size and a helper failure is denied', async ($, on) => {
+  let helper = { ...RAN, stdout: PIXELS }
+  on('process.run', async () => ({ value: helper }))
+  const call = (path: string) => $.tool.call({ tool: 'mcp__terminal-image__show_image', path, tool_use_id: 't9' } as never)
+
+  expect((await call('/x/a.png')).result).toBe('img: /x/a.png as 1x1 cells (kitty graphics)')
+
+  helper = { ...RAN, exitCode: 1, stderr: 'not a PNG file' }
+  expect((await call('/x/a.txt')).deny).toBe('img: not a PNG file')
 })

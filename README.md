@@ -1,9 +1,13 @@
 # terminal-image
 
 A Claude Code mod (function-hooks plugin) that shows an image (PNG, JPEG, GIF, WebP,
-BMP) in a pane inside the terminal UI.
+BMP) inside the terminal UI: under the row of the tool call that read or showed it,
+or in a pane.
 
-- `/img <image>` draws the picture with the kitty graphics protocol (real pixels).
+- An image the model reads (`Read`) or shows (`show_image`) is drawn in the
+  conversation, under that call's row (setting `display`, below).
+- `/img <image>` draws the picture in a pane with the kitty graphics protocol (real
+  pixels).
 - `/img --cells <image>` draws it as half-block character cells, for terminals
   without kitty graphics.
 
@@ -55,6 +59,17 @@ To run it from a checkout while developing instead:
 claude --plugin-dir /path/to/claude-terminal-image
 ```
 
+## Settings
+
+`display` (Claude Code's `/config` menu, or `pluginConfigs` in `settings.json`):
+
+| value | what happens |
+| --- | --- |
+| `conversation` (default) | A picture the model reads or shows appears under that call's row in the conversation. No pane opens. |
+| `pane` | The same picture opens in a pane beside the conversation (the 0.1.0 behaviour). |
+
+`/img` always uses the pane. Changing the setting reloads the mod.
+
 ## Usage
 
 ```
@@ -68,7 +83,8 @@ the same pane.
 
 ## Auto-display
 
-The pane also opens without typing `/img`:
+A picture also appears without typing `/img` (in the conversation, or in the pane
+with `display` = `pane`):
 
 - When the model reads a `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp` or `.bmp` with the
   `Read` tool, that file is shown.
@@ -76,9 +92,13 @@ The pane also opens without typing `/img`:
   model can call after it generates or saves an image. Its schema is in the prompt's
   tool list from the start (`isDeferred: false`).
 
-Both use pixel mode. A pane opened this way, without the user asking, is only drawn
-on a terminal at least 144 columns wide (110 once you have opened the pane yourself
-with `/img`); on a narrower terminal it waits undrawn.
+Both use pixel mode. In the conversation the picture is fitted into at most 60x15
+cells, keeping its aspect ratio, and the row keeps that size after a resize. The last
+20 pictures are kept; an older row shows its text only, as does any row after a reload.
+
+With `display` = `pane`, a pane opened this way, without the user asking, is only
+drawn on a terminal at least 144 columns wide (110 once you have opened the pane
+yourself with `/img`); on a narrower terminal it waits undrawn.
 
 ## Limits
 
